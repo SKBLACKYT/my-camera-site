@@ -1,22 +1,400 @@
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Camera Connect</title>
 
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: "AIzaSyAA8JAZbmmXGI6VSoDPV531bvDqRAS4C7o",
-  authDomain: "mycamera-e731c.firebaseapp.com",
-  databaseURL: "https://mycamera-e731c-default-rtdb.firebaseio.com",
-  projectId: "mycamera-e731c",
-  storageBucket: "mycamera-e731c.firebasestorage.app",
-  messagingSenderId: "1024429020924",
-  appId: "1:1024429020924:web:98c2f49af01722ba18e979",
-  measurementId: "G-H4S23VEW2E"
-};
+  <style>
+    body {
+      background: #000;
+      color: white;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 20px;
+    }
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
+    input, button {
+      padding: 12px;
+      margin: 6px;
+      border-radius: 8px;
+      border: none;
+      font-size: 16px;
+    }
+
+    video {
+      width: 95%;
+      max-width: 500px;
+      margin: 10px auto;
+      border-radius: 15px;
+      background: #222;
+    }
+  </style>
+</head>
+
+<body>
+
+  <h2>Camera Connect</h2>
+
+  <input id="roomId" placeholder="Enter Room ID">
+
+  <br>
+
+  <button id="startBtn">Start Camera</button>
+
+  <h3>My Camera</h3>
+  <video id="localVideo" autoplay muted playsinline></video>
+
+  <h3>Other Phone Camera</h3>
+  <video id="remoteVideo" autoplay playsinline></video>
+
+  <script type="module">
+
+    import { initializeApp }
+      from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
+
+    import {
+      getDatabase,
+      ref,
+      set,
+      get,
+      push,
+      onValue,
+      onChildAdded
+    } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-database.js";
+
+
+    // YOUR FIREBASE CONFIG
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAA8JAZbmmXGI6VSoDPV531bvDqRAS4C7o",
+      authDomain: "mycamera-e731c.firebaseapp.com",
+      databaseURL: "https://mycamera-e731c-default-rtdb.firebaseio.com",
+      projectId: "mycamera-e731c",
+      storageBucket: "mycamera-e731c.firebasestorage.app",
+      messagingSenderId: "1024429020924",
+      appId: "1:1024429020924:web:98c2f49af01722ba18e979"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+
+    const servers = {
+      iceServers: [
+        {
+          urls: "stun:stun.l.google.com:19302"
+        }
+      ]
+    };
+
+
+    let peer;
+    let localStream;
+    let roomId;
+
+
+    const localVideo =
+      document.getElementById("localVideo");
+
+    const remoteVideo =
+      document.getElementById("remoteVideo");
+
+
+    document
+      .getElementById("startBtn")
+      .onclick = startCamera;
+
+
+    async function startCamera() {
+
+      roomId =
+        document.getElementById("roomId").value.trim();
+
+
+      if (!roomId) {
+
+        alert("Enter a Room ID");
+
+        return;
+      }
+
+
+      try {
+
+        localStream =
+          await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false
+          });
+
+
+        localVideo.srcObject = localStream;
+
+
+        peer =
+          new RTCPeerConnection(servers);
+
+
+        localStream
+          .getTracks()
+          .forEach(track => {
+
+            peer.addTrack(
+              track,
+              localStream
+            );
+
+          });
+
+
+        peer.ontrack = event => {
+
+          remoteVideo.srcObject =
+            event.streams[0];
+
+        };
+
+
+        const roomRef =
+          ref(db, "rooms/" + roomId);
+
+
+        const roomSnapshot =
+          await get(roomRef);
+
+
+        if (!roomSnapshot.exists()) {
+
+          await createRoom(roomRef);
+
+        } else {
+
+          await joinRoom(roomRef);
+
+        }
+
+
+      } catch (error) {
+
+        console.error(error);
+
+        alert(
+          "Camera permission or connection error"
+        );
+
+      }
+
+    }
+
+
+    async function createRoom(roomRef) {
+
+      const offer =
+        await peer.createOffer();
+
+
+      await peer.setLocalDescription(
+        offer
+      );
+
+
+      await set(
+        ref(db, "rooms/" + roomId + "/offer"),
+        {
+          type: offer.type,
+          sdp: offer.sdp
+        }
+      );
+
+
+      const candidatesRef =
+        ref(
+          db,
+          "rooms/" +
+          roomId +
+          "/callerCandidates"
+        );
+
+
+      peer.onicecandidate =
+        event => {
+
+          if (event.candidate) {
+
+            push(
+              candidatesRef,
+              event.candidate.toJSON()
+            );
+
+          }
+
+        };
+
+
+      onValue(
+        ref(
+          db,
+          "rooms/" +
+          roomId +
+          "/answer"
+        ),
+        async snapshot => {
+
+          const answer =
+            snapshot.val();
+
+
+          if (
+            answer &&
+            !peer.currentRemoteDescription
+          ) {
+
+            await peer.setRemoteDescription(
+              new RTCSessionDescription(
+                answer
+              )
+            );
+
+          }
+
+        }
+      );
+
+
+      onChildAdded(
+        ref(
+          db,
+          "rooms/" +
+          roomId +
+          "/calleeCandidates"
+        ),
+        async snapshot => {
+
+          try {
+
+            await peer.addIceCandidate(
+              new RTCIceCandidate(
+                snapshot.val()
+              )
+            );
+
+          } catch (e) {
+
+            console.log(e);
+
+          }
+
+        }
+      );
+
+
+      alert(
+        "Room created. Open the same link on Phone 2 and enter the same Room ID."
+      );
+
+    }
+
+
+    async function joinRoom(roomRef) {
+
+      const room =
+        (await get(roomRef)).val();
+
+
+      if (!room.offer) {
+
+        alert("Room is not ready.");
+
+        return;
+
+      }
+
+
+      await peer.setRemoteDescription(
+        new RTCSessionDescription(
+          room.offer
+        )
+      );
+
+
+      const answer =
+        await peer.createAnswer();
+
+
+      await peer.setLocalDescription(
+        answer
+      );
+
+
+      await set(
+        ref(
+          db,
+          "rooms/" +
+          roomId +
+          "/answer"
+        ),
+        {
+          type: answer.type,
+          sdp: answer.sdp
+        }
+      );
+
+
+      const candidatesRef =
+        ref(
+          db,
+          "rooms/" +
+          roomId +
+          "/calleeCandidates"
+        );
+
+
+      peer.onicecandidate =
+        event => {
+
+          if (event.candidate) {
+
+            push(
+              candidatesRef,
+              event.candidate.toJSON()
+            );
+
+          }
+
+        };
+
+
+      onChildAdded(
+        ref(
+          db,
+          "rooms/" +
+          roomId +
+          "/callerCandidates"
+        ),
+        async snapshot => {
+
+          try {
+
+            await peer.addIceCandidate(
+              new RTCIceCandidate(
+                snapshot.val()
+              )
+            );
+
+          } catch (e) {
+
+            console.log(e);
+
+          }
+
+        }
+      );
+
+    }
+
+  </script>
+
+</body>
+</html>
