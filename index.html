@@ -1,1 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Camera</title>
 
+  <style>
+    body {
+      margin: 0;
+      background: #111;
+      color: white;
+      font-family: Arial, sans-serif;
+      text-align: center;
+    }
+
+    h2 {
+      margin-top: 30px;
+    }
+
+    video {
+      width: 90%;
+      max-width: 600px;
+      margin-top: 20px;
+      border-radius: 15px;
+      background: black;
+    }
+
+    button {
+      margin-top: 20px;
+      padding: 14px 25px;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<body>
+
+  <h2>My Camera</h2>
+
+  <video id="camera" autoplay playsinline></video>
+
+  <br>
+
+  <button onclick="startCamera()">Allow Camera</button>
+
+  <script>
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false
+        });
+
+        document.getElementById("camera").srcObject = stream;
+      } catch (error) {
+        alert("Camera permission denied or camera unavailable.");
+        console.log(error);
+      }
+    }
+  </script>
+
+</body>
+</html>
